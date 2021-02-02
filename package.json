@@ -1,0 +1,22 @@
+{
+  "name": "serverless-01",
+  "version": "1.0.0",
+  "description": "Serverless test 01",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pvillega/serverless-01.git"
+  },
+  "keywords": [
+    "serverless"
+  ],
+  "author": "Pere Villega",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/pvillega/serverless-01/issues"
+  },
+  "homepage": "https://github.com/pvillega/serverless-01#readme"
+}
