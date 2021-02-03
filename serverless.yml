@@ -10,10 +10,11 @@
 #    docs.serverless.com
 #
 # Happy Coding!
-service: serverless-01
+
 # app and org for use with dashboard.serverless.com
-app: serverless-01
 org: aracon
+app: serverless-01
+service: serverless-01
 
 # You can pin your service to only deploy with a specific Serverless version
 # Check out our docs for more details
