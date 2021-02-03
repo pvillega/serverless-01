@@ -20,6 +20,10 @@ service: serverless-01
 # Check out our docs for more details
 frameworkVersion: "2"
 
+plugins:
+  - serverless-step-functions
+  - serverless-pseudo-parameters
+
 provider:
   name: aws
   runtime: nodejs12.x
@@ -27,24 +31,24 @@ provider:
   # configuration for aws in this profile, locally
   profile: learning-serverless
   # you can overwrite defaults here
-  #  stage: dev
+  # stage: dev
   region: eu-west-2
+  memorySize: 128
 
 # you can add statements to the Lambda function's IAM Role here
-#  iamRoleStatements:
-#    - Effect: "Allow"
-#      Action:
-#        - "s3:ListBucket"
-#      Resource: { "Fn::Join" : ["", ["arn:aws:s3:::", { "Ref" : "ServerlessDeploymentBucket" } ] ]  }
-#    - Effect: "Allow"
-#      Action:
-#        - "s3:PutObject"
-#      Resource:
-#        Fn::Join:
-#          - ""
-#          - - "arn:aws:s3:::"
-#            - "Ref" : "ServerlessDeploymentBucket"
-#            - "/*"
+  iamRoleStatements:
+    - Effect: "Allow"
+      Action:
+        - "s3:ListBucket"
+        - "s3:GetObject"
+        - "s3:PutObject"
+      Resource: "arn:aws:s3:::learning-serverless-01-resizer-sample-service-images/*"
+    - Effect: "Allow"
+      Action:
+        - "states:ListStateMachines"
+        - "states:StartExecution"
+      Resource: "arn:aws:states:*:*:*"
+
 
 # you can define service wide environment variables here
 #  environment:
@@ -60,47 +64,64 @@ provider:
 #    - exclude-me-dir/**
 
 functions:
-  hello:
-    handler: handler.hello
+  executeStepFunction:
+    handler: handler.executeStepFunction
     events:
-      - httpApi:
-          path: /hello
-          method: get
-#    The following are a few example events you can configure
-#    NOTE: Please make sure to change your handler code to work with those events
-#    Check the event documentation for details
-#    events:
-#      - httpApi:
-#          path: /users/create
-#          method: get
-#      - websocket: $connect
-#      - s3: ${env:BUCKET}
-#      - schedule: rate(10 minutes)
-#      - sns: greeter-topic
-#      - stream: arn:aws:dynamodb:region:XXXXXX:table/foo/stream/1970-01-01T00:00:00.000
-#      - alexaSkill: amzn1.ask.skill.xx-xx-xx-xx
-#      - alexaSmartHome: amzn1.ask.skill.xx-xx-xx-xx
-#      - iot:
-#          sql: "SELECT * FROM 'some_topic'"
-#      - cloudwatchEvent:
-#          event:
-#            source:
-#              - "aws.ec2"
-#            detail-type:
-#              - "EC2 Instance State-change Notification"
-#            detail:
-#              state:
-#                - pending
-#      - cloudwatchLog: '/aws/lambda/hello'
-#      - cognitoUserPool:
-#          pool: MyUserPool
-#          trigger: PreSignUp
-#      - alb:
-#          listenerArn: arn:aws:elasticloadbalancing:us-east-1:XXXXXX:listener/app/my-load-balancer/50dc6c495c0c9188/
-#          priority: 1
-#          conditions:
-#            host: example.com
-#            path: /hello
+      - s3:
+          bucket: learning-serverless-01-resizer-sample-service-images
+          event: s3:ObjectCreated:*
+          rules:
+            - prefix: uploads/
+            - suffix: .jpg
+  resizer:
+    handler: handler.resizer
+  saveImageMetadata:
+    handler: handler.saveImageMetadata
+  blackAndWhiteCrop:
+    handler: handler.blackAndWhiteCrop
+  thumbnails:
+    handler: handler.thumbnails
+    events:
+      - s3:
+          bucket: learning-serverless-01-resizer-sample-service-images
+          event: s3:ObjectCreated:*
+          rules:
+            - prefix: thumbnails/
+            - suffix: .jpg
+
+
+stepFunctions:
+  stateMachines:
+    imageProcessingMachine: #Name of the state machine
+      definition:
+        Comment: "Image processing state machine"
+        StartAt: Parallel # First state
+        States:
+          Parallel: # Name of the first state
+            Type: Parallel # Type of the state
+            Next: FinalState # Name of the next state
+            Branches: # Branches in the parallel state machine
+              - StartAt: ResizeImage
+                States:
+                  ResizeImage:
+                    Type: Task
+                    Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:service}-${opt:stage}-resizer
+                    End: true
+              - StartAt: SaveImageMetadata
+                States:
+                  SaveImageMetadata:
+                    Type: Task
+                    Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:service}-${opt:stage}-saveImageMetadata
+                    End: true
+              - StartAt: BlackAndWhiteCrop
+                States:
+                  BlackAndWhiteCrop:
+                    Type: Task
+                    Resource: arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:service}-${opt:stage}-blackAndWhiteCrop
+                    End: true
+          FinalState: # Final state name
+            Type: Pass
+            End: true
 
 #    Define function environment variables here
 #    environment:
