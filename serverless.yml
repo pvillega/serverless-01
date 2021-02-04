@@ -24,18 +24,35 @@ plugins:
   - serverless-step-functions
   - serverless-pseudo-parameters
 
+custom:
+  settings:
+    IMAGES_DYNAMODB_TABLE: images-metadata
+    APPLICATION_DYNAMODB_TABLE: applications-table
+    SECRET_KEY: ${ssm:learning-serverless-secret-token}
+
 provider:
   name: aws
   runtime: nodejs12.x
   lambdaHashingVersion: 20201221
+  environment: ${self:custom.settings}
   # configuration for aws in this profile, locally
   profile: learning-serverless
+  apiKeys:
+    - learning-serverless-api-key
   # you can overwrite defaults here
   # stage: dev
   region: eu-west-2
   memorySize: 128
+  usagePlan:
+    quota:
+      limit: 10
+      offset: 0
+      period: DAY
+    throttle:
+      burstLimit: 10
+      rateLimit: 10
 
-# you can add statements to the Lambda function's IAM Role here
+  # you can add statements to the Lambda function's IAM Role here
   iamRoleStatements:
     - Effect: "Allow"
       Action:
@@ -48,7 +65,22 @@ provider:
         - "states:ListStateMachines"
         - "states:StartExecution"
       Resource: "arn:aws:states:*:*:*"
-
+    - Effect: "Allow"
+      Action:
+        - "dynamodb:Scan"
+        - "dynamodb:GetItem"
+        - "dynamodb:PutItem"
+        - "dynamodb:UpdateItem"
+        - "dynamodb:DeleteItem"
+        - "dynamodb:ListStreams"
+      Resource:
+        - "arn:aws:dynamodb:${self:provider.region}:*:table/${self:custom.settings.IMAGES_DYNAMODB_TABLE}"
+    - Effect: "Allow"
+      Action:
+        - "dynamodb:GetItem"
+        - "dynamodb:PutItem"
+      Resource:
+        - "arn:aws:dynamodb:${self:provider.region}:*:table/${self:custom.settings.APPLICATION_DYNAMODB_TABLE}"
 
 # you can define service wide environment variables here
 #  environment:
@@ -88,7 +120,46 @@ functions:
           rules:
             - prefix: thumbnails/
             - suffix: .jpg
-
+  updateImageMetadata:
+    handler: handler.updateImageMetadata
+    events:
+      - stream:
+          type: dynamodb
+          batchSize: 1
+          startingPosition: LATEST
+          arn:
+            Fn::GetAtt:
+              - ImagesTable
+              - StreamArn
+  getImageMetadata:
+    handler: handler.getImageMetadata
+    events:
+      - http:
+          path: image/{imageId}
+          method: get
+          authorizer: authorize
+  getThumbnailMetadata:
+    handler: handler.getThumbnailMetadata
+    events:
+      - http:
+          path: thumbnail/{imageId}
+          method: get
+          authorizer: authorize
+  generateToken:
+    handler: authorizationHandler.generateToken
+    events:
+      - http:
+          path: register
+          method: post
+          private: true
+  authorize:
+    handler: authorizationHandler.authorize
+  createApplication:
+    handler: authorizationHandler.createApplication
+    events:
+      - http:
+          path: application
+          method: post
 
 stepFunctions:
   stateMachines:
@@ -127,14 +198,33 @@ stepFunctions:
 #    environment:
 #      variable2: value2
 
-# you can add CloudFormation resource templates here
-#resources:
-#  Resources:
-#    NewResource:
-#      Type: AWS::S3::Bucket
-#      Properties:
-#        BucketName: my-new-bucket
-#  Outputs:
-#     NewOutput:
-#       Description: "Description for the output"
-#       Value: "Some output value"
+resources:
+  Resources:
+    ImagesTable:
+      Type: "AWS::DynamoDB::Table"
+      Properties:
+        AttributeDefinitions:
+          - AttributeName: "imageId"
+            AttributeType: "S"
+        KeySchema:
+          - AttributeName: "imageId"
+            KeyType: "HASH"
+        ProvisionedThroughput: # See Dynamo autoscale plugin for alternative to this
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+        TableName: ${self:custom.settings.IMAGES_DYNAMODB_TABLE}
+        StreamSpecification:
+          StreamViewType: NEW_IMAGE
+    ApplicationsTable:
+      Type: "AWS::DynamoDB::Table"
+      Properties:
+        AttributeDefinitions:
+          - AttributeName: "applicationId"
+            AttributeType: "S"
+        KeySchema:
+          - AttributeName: "applicationId"
+            KeyType: "HASH"
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+        TableName: ${self:custom.settings.APPLICATION_DYNAMODB_TABLE}

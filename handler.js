@@ -119,3 +119,54 @@ module.exports.thumbnails = async (event) => {
       return null;
     });
 };
+
+module.exports.updateImageMetadata = async (event) => {
+  console.log('updateImageMetadata');
+
+  const eventData = event.Records[0];
+  console.log(eventData);
+
+  if (eventData.eventName === 'INSERT') {
+    if (eventData.dynamodb.NewImage.isAThumbnail.BOOL) {
+      const image = eventData.dynamodb.NewImage;
+
+      // if it is a thumbnail then we need to find the image and update the thumbnail ids
+      imageMetadataManager.updateImageMetadata(image.key.S, image.imageId.S).then(() => {
+        console.log('Image updated');
+        return null;
+      });
+    }
+  }
+  return null;
+};
+
+module.exports.getImageMetadata = async (event) => {
+  console.log('getImageMetadata was called');
+  console.log(event);
+
+  const imageId = event.pathParameters && event.pathParameters.imageId;
+
+  imageMetadataManager
+    .getImageMetadata(imageId)
+    .then(imageMetadata => sendResponse(200, { message: imageMetadata }))
+    .catch(error => sendResponse(400, { message: 'There was an error when fetching the metadata' }));
+};
+
+module.exports.getThumbnailMetadata = async (event) => {
+  console.log('getThumbnailMetadata was called');
+
+  const imageId = event.pathParameters && event.pathParameters.imageId;
+
+  imageMetadataManager
+    .getThumbnailForImage(imageId)
+    .then(thumbnailMetadata => sendResponse(200, { message: thumbnailMetadata }))
+    .catch(error => sendResponse(400, { message: 'There was an error when fetching the thumbnail metadata' }));
+};
+
+function sendResponse(statusCode, message) {
+  const response = {
+    statusCode: statusCode,
+    body: JSON.stringify(message)
+  };
+  return response;
+}
